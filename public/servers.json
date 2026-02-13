@@ -1,0 +1,10 @@
+[
+  {
+    "name": "IRC4Fun",
+    "description": "IRC4Fun - IRC Network for Fun!",
+    "server": "app3.irc4fun.net",
+    "port": "443",
+    "obsidian": true,
+    "channels": ["#IRC4Fun"]
+  }
+]

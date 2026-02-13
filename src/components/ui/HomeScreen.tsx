@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { FaPlus } from "react-icons/fa";
 import useStore from "../../store";
+import ircClient from "../../lib/ircClient";
 
 const DiscoverGrid = () => {
   const { toggleAddServerModal, connect, isConnecting, connectionError } =
     useStore();
   const [query, setQuery] = useState("");
   const [servers, setServers] = useState<
-    { name: string; description: string; server?: string; port?: string }[]
+    { name: string; description: string; server?: string; port?: string; channels?: string[] }[]
   >([]);
 
   useEffect(() => {
     const fetchServers = async () => {
       try {
         const response = await fetch(
-          "https://raw.githubusercontent.com/ObsidianIRC/server-list/refs/heads/main/servers.json",
+          "/servers.json",
         );
         if (!response.ok) {
           throw new Error("Failed to fetch servers");
@@ -35,17 +36,25 @@ const DiscoverGrid = () => {
       server.description.toLowerCase().includes(query.toLowerCase()),
   );
 
-  const handleServerClick = (server: Record<string, string>) => {
+  const handleServerClick = (server: Record<string, string | string[]>) => {
     toggleAddServerModal(true, {
-      name: server.name,
-      host: server.server || "", // Use empty string if server is undefined
-      port: server.port || "443", // Default to 443 if port is undefined
-      nickname: "", // Generate a default nickname
+      name: server.name as string,
+      host: (server.server || "") as string,
+      port: (server.port || "443") as string,
+      nickname: "",
       ui: {
         disableServerConnectionInfo: true,
-        title: server.name,
+        title: server.name as string,
       },
     });
+    if (Array.isArray(server.channels) && server.channels.length > 0) {
+      const channels = server.channels as string[];
+      ircClient.on("ready", ({ serverId }) => {
+        for (const channel of channels) {
+          ircClient.joinChannel(serverId, channel);
+        }
+      });
+    }
   };
 
   return __HIDE_SERVER_LIST__ ? (
