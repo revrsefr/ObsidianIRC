@@ -1,22 +1,26 @@
 import { useEffect, useState } from "react";
 import { FaPlus } from "react-icons/fa";
-import useStore from "../../store";
 import ircClient from "../../lib/ircClient";
+import useStore from "../../store";
 
 const DiscoverGrid = () => {
   const { toggleAddServerModal, connect, isConnecting, connectionError } =
     useStore();
   const [query, setQuery] = useState("");
   const [servers, setServers] = useState<
-    { name: string; description: string; server?: string; port?: string; channels?: string[] }[]
+    {
+      name: string;
+      description: string;
+      server?: string;
+      port?: string;
+      channels?: string[];
+    }[]
   >([]);
 
   useEffect(() => {
     const fetchServers = async () => {
       try {
-        const response = await fetch(
-          "/servers.json",
-        );
+        const response = await fetch("/servers.json");
         if (!response.ok) {
           throw new Error("Failed to fetch servers");
         }
