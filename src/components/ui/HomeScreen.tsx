@@ -20,7 +20,7 @@ const DiscoverGrid = () => {
   useEffect(() => {
     const fetchServers = async () => {
       try {
-        const response = await fetch("/servers.json");
+        const response = await fetch("./servers.json");
         if (!response.ok) {
           throw new Error("Failed to fetch servers");
         }

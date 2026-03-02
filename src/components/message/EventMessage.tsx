@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import ircClient from "../../lib/ircClient";
+import { fetchAvatarFromApi, normalizeAvatarUrl } from "../../lib/ircUtils";
 import type { Message as MessageType, User } from "../../types";
 
 interface EventMessageProps {
@@ -23,14 +24,46 @@ export const EventMessage: React.FC<EventMessageProps> = ({
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const [apiAvatarUrl, setApiAvatarUrl] = useState("");
 
   // Get server-specific current user instead of global currentUser
   const currentUser = ircClient.getCurrentUser(message.serverId);
 
+  const username = message.userId.split("-")[0];
+  const metadataAvatar = normalizeAvatarUrl(
+    messageUser?.metadata?.avatar?.value,
+  );
+  const effectiveAvatarUrl = metadataAvatar || apiAvatarUrl;
+
   // Reset image load failed state when avatar URL changes
   useEffect(() => {
+    if (!effectiveAvatarUrl) {
+      return;
+    }
     setImageLoadFailed(false);
-  }, []);
+  }, [effectiveAvatarUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (metadataAvatar) {
+      setApiAvatarUrl("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const account = messageUser?.account || username;
+    fetchAvatarFromApi(account).then((resolvedAvatar) => {
+      if (!cancelled) {
+        setApiAvatarUrl(resolvedAvatar);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [metadataAvatar, messageUser?.account, username]);
 
   const formatTime = (date: Date) => {
     return new Intl.DateTimeFormat("en-US", {
@@ -58,7 +91,6 @@ export const EventMessage: React.FC<EventMessageProps> = ({
     setShowTooltip(false);
   };
 
-  const username = message.userId.split("-")[0];
   const displayName =
     messageUser?.metadata?.["display-name"]?.value || username;
   const userColor = messageUser?.metadata?.color?.value || "#888888";
@@ -77,9 +109,9 @@ export const EventMessage: React.FC<EventMessageProps> = ({
           className="w-3 h-3 rounded-full bg-black flex items-center justify-center text-white text-xs cursor-pointer hover:opacity-80 transform transition-all duration-200 hover:scale-250 hover:w-8 hover:h-8 hover:text-base relative z-10 hover:z-20"
           onClick={handleAvatarClick}
         >
-          {messageUser?.metadata?.avatar?.value && !imageLoadFailed ? (
+          {effectiveAvatarUrl && !imageLoadFailed ? (
             <img
-              src={messageUser.metadata.avatar.value}
+              src={effectiveAvatarUrl}
               alt={username}
               className="w-3 h-3 rounded-full object-cover hover:w-8 hover:h-8 transition-all duration-200"
               onError={() => {

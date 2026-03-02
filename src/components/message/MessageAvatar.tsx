@@ -1,6 +1,10 @@
 import type React from "react";
-import { useState } from "react";
-import { isUrlFromFilehost } from "../../lib/ircUtils";
+import { useEffect, useState } from "react";
+import {
+  fetchAvatarFromApi,
+  isUrlFromFilehost,
+  normalizeAvatarUrl,
+} from "../../lib/ircUtils";
 import useStore from "../../store";
 
 interface MessageAvatarProps {
@@ -13,6 +17,7 @@ interface MessageAvatarProps {
   onClick?: (e: React.MouseEvent) => void;
   isClickable?: boolean;
   serverId?: string;
+  account?: string;
 }
 
 export const MessageAvatar: React.FC<MessageAvatarProps> = ({
@@ -25,26 +30,56 @@ export const MessageAvatar: React.FC<MessageAvatarProps> = ({
   onClick,
   isClickable = false,
   serverId,
+  account,
 }) => {
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const [apiAvatarUrl, setApiAvatarUrl] = useState("");
   const username = userId.split("-")[0];
+  const normalizedAvatarUrl = normalizeAvatarUrl(avatarUrl);
+  const effectiveAvatarUrl = normalizedAvatarUrl || apiAvatarUrl;
 
   // Get global settings and server info
-  const { showSafeMedia, showExternalContent } = useStore(
-    (state) => state.globalSettings,
-  );
+  const { showExternalContent } = useStore((state) => state.globalSettings);
   const server = serverId
     ? useStore.getState().servers.find((s) => s.id === serverId)
     : null;
 
+  useEffect(() => {
+    if (!effectiveAvatarUrl) {
+      return;
+    }
+    setImageLoadFailed(false);
+  }, [effectiveAvatarUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (normalizedAvatarUrl) {
+      setApiAvatarUrl("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const accountKey = account || username;
+    fetchAvatarFromApi(accountKey).then((resolvedAvatar) => {
+      if (!cancelled) {
+        setApiAvatarUrl(resolvedAvatar);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedAvatarUrl, account, username]);
+
   // Check if avatar is from our trusted FILEHOST
   const isFilehostAvatar =
-    avatarUrl &&
-    server?.filehost &&
-    isUrlFromFilehost(avatarUrl, server.filehost);
+    effectiveAvatarUrl &&
+    isUrlFromFilehost(effectiveAvatarUrl, server?.filehost || "");
   // Show avatar if it's from FILEHOST (trusted) and safe media is enabled, or if external content is allowed
   const shouldShowAvatar =
-    avatarUrl && ((isFilehostAvatar && showSafeMedia) || showExternalContent);
+    effectiveAvatarUrl && (isFilehostAvatar || showExternalContent);
 
   if (!showHeader) {
     return (
@@ -62,7 +97,7 @@ export const MessageAvatar: React.FC<MessageAvatarProps> = ({
       <div className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white relative">
         {shouldShowAvatar && !imageLoadFailed ? (
           <img
-            src={avatarUrl}
+            src={effectiveAvatarUrl}
             alt={username}
             className="w-8 h-8 rounded-full object-cover"
             onError={() => {

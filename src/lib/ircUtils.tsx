@@ -721,17 +721,129 @@ export function getChannelAvatarUrl(
   metadata?: Record<string, { value: string | undefined; visibility: string }>,
   size?: number,
 ): string | undefined {
-  const avatarUrl = metadata?.avatar?.value;
-  if (!avatarUrl) {
+  return normalizeAvatarUrl(metadata?.avatar?.value, size);
+}
+
+const avatarApiCache = new Map<string, string>();
+const avatarApiPending = new Map<string, Promise<string>>();
+
+/**
+ * Normalize avatar metadata/API values into a usable URL.
+ * Supports plain URL/path values and JSON payloads like {"avatar_url":"/media/..."}.
+ */
+export function normalizeAvatarUrl(
+  rawAvatarValue?: unknown,
+  size?: number,
+): string | undefined {
+  if (!rawAvatarValue) {
     return undefined;
   }
 
-  // If size is provided and URL contains {size} placeholder, substitute it
-  if (size && avatarUrl.includes("{size}")) {
-    return avatarUrl.replace("{size}", size.toString());
+  const extractFromObject = (
+    valueObj: Record<string, unknown>,
+  ): string | undefined => {
+    const direct = valueObj.avatar_url || valueObj.url || valueObj.avatar;
+    if (typeof direct === "string") {
+      return direct;
+    }
+    if (direct && typeof direct === "object") {
+      const nested = direct as Record<string, unknown>;
+      const nestedValue = nested.url || nested.avatar_url || nested.avatar;
+      if (typeof nestedValue === "string") {
+        return nestedValue;
+      }
+    }
+    return undefined;
+  };
+
+  let value = "";
+
+  if (typeof rawAvatarValue === "string") {
+    const rawValue = rawAvatarValue.trim();
+    value = rawValue;
+
+    if (rawValue.startsWith("{") || rawValue.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(rawValue) as unknown;
+        if (typeof parsed === "string") {
+          value = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          value = extractFromObject(parsed as Record<string, unknown>) || "";
+        }
+      } catch {
+        // Fall through and treat input as plain string.
+      }
+    }
+  } else if (typeof rawAvatarValue === "object") {
+    value = extractFromObject(rawAvatarValue as Record<string, unknown>) || "";
+  } else {
+    value = String(rawAvatarValue || "");
   }
 
-  return avatarUrl;
+  value = String(value || "").trim();
+  if (
+    !value ||
+    value === "null" ||
+    value === "None" ||
+    value === "[object Object]"
+  ) {
+    return undefined;
+  }
+
+  if (size && value.includes("{size}")) {
+    value = value.replace("{size}", size.toString());
+  }
+
+  if (value.startsWith("/")) {
+    return `${window.location.origin}${value}`;
+  }
+
+  return value;
+}
+
+/**
+ * Resolve avatar URL from account API with in-memory cache and de-duplication.
+ */
+export function fetchAvatarFromApi(account: string): Promise<string> {
+  const key = String(account || "")
+    .trim()
+    .toLowerCase();
+  if (!key) {
+    return Promise.resolve("");
+  }
+
+  const cached = avatarApiCache.get(key);
+  if (cached !== undefined) {
+    return Promise.resolve(cached);
+  }
+
+  const pending = avatarApiPending.get(key);
+  if (pending) {
+    return pending;
+  }
+
+  const request = fetch(
+    `/accounts/api/get_avatar/?account=${encodeURIComponent(key)}`,
+    {
+      method: "GET",
+      credentials: "same-origin",
+    },
+  )
+    .then((res) => res.text())
+    .then((body) => {
+      const normalized = normalizeAvatarUrl(body) || "";
+      avatarApiCache.set(key, normalized);
+      avatarApiPending.delete(key);
+      return normalized;
+    })
+    .catch(() => {
+      avatarApiCache.set(key, "");
+      avatarApiPending.delete(key);
+      return "";
+    });
+
+  avatarApiPending.set(key, request);
+  return request;
 }
 
 /**
@@ -758,10 +870,24 @@ export function isUrlFromFilehost(
   avatarUrl: string,
   filehost: string,
 ): boolean {
-  if (!avatarUrl || !filehost) return false;
+  if (!avatarUrl) return false;
 
   try {
-    const avatarUrlObj = new URL(avatarUrl);
+    const avatarUrlObj = new URL(avatarUrl, window.location.origin);
+
+    // Always allow same-origin account avatar API URLs and stored avatar media.
+    if (
+      avatarUrlObj.origin === window.location.origin &&
+      (avatarUrlObj.pathname.startsWith("/accounts/api/get_avatar") ||
+        avatarUrlObj.pathname.startsWith("/media/avatars"))
+    ) {
+      return true;
+    }
+
+    if (!filehost) {
+      return false;
+    }
+
     const filehostUrl = new URL(filehost);
 
     // Check if origins match (protocol + host + port)

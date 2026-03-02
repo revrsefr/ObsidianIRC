@@ -25,6 +25,7 @@ import {
   getChannelDisplayName,
   hasOpPermission,
   isUrlFromFilehost,
+  normalizeAvatarUrl,
 } from "../../lib/ircUtils";
 import useStore, { loadSavedMetadata } from "../../store";
 import type { Channel, PrivateChat, User } from "../../types";
@@ -95,9 +96,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   );
 
   // Get global settings for media controls
-  const { showSafeMedia, showExternalContent } = useStore(
-    (state) => state.globalSettings,
-  );
+  const { showExternalContent } = useStore((state) => state.globalSettings);
 
   // Get private chat user metadata - first check localStorage, then check shared channels
   const privateChatUserMetadata = useMemo(() => {
@@ -229,7 +228,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     );
   };
 
-  const privateChatAvatar = privateChatUserMetadata?.avatar?.value;
+  const privateChatAvatar = normalizeAvatarUrl(
+    privateChatUserMetadata?.avatar?.value,
+  );
 
   // Check if current user is operator
   const isOperator = (() => {
@@ -305,11 +306,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 );
                 const isFilehostAvatar =
                   avatarUrl &&
-                  selectedServer?.filehost &&
-                  isUrlFromFilehost(avatarUrl, selectedServer.filehost);
+                  isUrlFromFilehost(avatarUrl, selectedServer?.filehost || "");
                 const shouldShowAvatar =
-                  avatarUrl &&
-                  ((isFilehostAvatar && showSafeMedia) || showExternalContent);
+                  avatarUrl && (isFilehostAvatar || showExternalContent);
 
                 return shouldShowAvatar ? (
                   <img
@@ -344,12 +343,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                     );
                     const isFilehostAvatar =
                       avatarUrl &&
-                      selectedServer?.filehost &&
-                      isUrlFromFilehost(avatarUrl, selectedServer.filehost);
+                      isUrlFromFilehost(
+                        avatarUrl,
+                        selectedServer?.filehost || "",
+                      );
                     const shouldShowAvatar =
-                      avatarUrl &&
-                      ((isFilehostAvatar && showSafeMedia) ||
-                        showExternalContent);
+                      avatarUrl && (isFilehostAvatar || showExternalContent);
                     return shouldShowAvatar ? "none" : "inline-block";
                   })(),
                 }}
@@ -458,12 +457,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 );
                 const isFilehostAvatar =
                   privateChatAvatar &&
-                  selectedServer?.filehost &&
-                  isUrlFromFilehost(privateChatAvatar, selectedServer.filehost);
+                  isUrlFromFilehost(
+                    privateChatAvatar,
+                    selectedServer?.filehost || "",
+                  );
                 const shouldShowAvatar =
                   privateChatAvatar &&
-                  ((isFilehostAvatar && showSafeMedia) ||
-                    showExternalContent) &&
+                  (isFilehostAvatar || showExternalContent) &&
                   !avatarLoadFailed;
 
                 return shouldShowAvatar ? (

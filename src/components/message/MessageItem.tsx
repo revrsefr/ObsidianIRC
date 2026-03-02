@@ -893,6 +893,7 @@ export const MessageItem = (props: MessageItemProps) => {
         <MessageAvatar
           userId={message.userId}
           avatarUrl={avatarUrl}
+          account={messageUser?.account || username}
           userStatus={userStatus}
           isAway={messageUser?.isAway}
           theme={theme}

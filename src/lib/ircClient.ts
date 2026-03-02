@@ -480,6 +480,7 @@ export class IRCClient {
       let protocol = ["localhost", "127.0.0.1"].includes(host) ? "ws" : "wss";
       let actualHost = host;
       let actualPort = port;
+      let actualPath = "";
 
       if (host.startsWith("irc://") || host.startsWith("ircs://")) {
         // Parse the IRC URL using centralized parser (Android-compatible)
@@ -489,16 +490,30 @@ export class IRCClient {
         actualHost = parsed.host;
         actualPort = parsed.port;
       } else if (host.startsWith("ws://") || host.startsWith("wss://")) {
-        // Parse ws/wss URLs
-        const urlMatch = host.match(/^(wss?):\/\/([^:]+)(?::(\d+))?/);
-        if (urlMatch) {
-          protocol = urlMatch[1] as "ws" | "wss";
-          actualHost = urlMatch[2];
-          actualPort = urlMatch[3] ? Number.parseInt(urlMatch[3], 10) : port;
+        // Parse ws/wss URLs including optional path/query for websocket gateways.
+        try {
+          const parsedUrl = new URL(host);
+          protocol = parsedUrl.protocol.replace(":", "") as "ws" | "wss";
+          actualHost = parsedUrl.hostname;
+          actualPort = parsedUrl.port
+            ? Number.parseInt(parsedUrl.port, 10)
+            : port;
+          actualPath = `${parsedUrl.pathname || ""}${parsedUrl.search || ""}`;
+        } catch {
+          // Fallback for malformed URL-like inputs.
+          const urlMatch = host.match(
+            /^(wss?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/,
+          );
+          if (urlMatch) {
+            protocol = urlMatch[1] as "ws" | "wss";
+            actualHost = urlMatch[2];
+            actualPort = urlMatch[3] ? Number.parseInt(urlMatch[3], 10) : port;
+            actualPath = urlMatch[4] || "";
+          }
         }
       }
 
-      const url = `${protocol}://${actualHost}:${actualPort}`;
+      const url = `${protocol}://${actualHost}:${actualPort}${actualPath}`;
       const socket = createSocket(url);
 
       // Create server object immediately and add to servers map

@@ -14,6 +14,7 @@ import {
   FaUserCheck,
 } from "react-icons/fa";
 import ircClient from "../../lib/ircClient";
+import { fetchAvatarFromApi, normalizeAvatarUrl } from "../../lib/ircUtils";
 import useStore from "../../store";
 import ExternalLinkWarningModal from "./ExternalLinkWarningModal";
 
@@ -77,6 +78,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
 }) => {
   const [isLoadingWhois, setIsLoadingWhois] = useState(false);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
+  const [apiAvatarUrl, setApiAvatarUrl] = useState<string>("");
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const whoisRequestedRef = useRef(false);
   const metadataRequestedRef = useRef<string | null>(null);
@@ -167,8 +169,6 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     return parseChannels(whoisData.channels);
   }, [whoisData?.channels]);
 
-  if (!isOpen) return null;
-
   // Format idle time
   const formatIdleTime = (seconds: number): string => {
     if (seconds < 60) return `${seconds} seconds`;
@@ -184,7 +184,8 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   };
 
   const displayName = user?.metadata?.["display-name"]?.value || username;
-  const avatar = user?.metadata?.avatar?.value;
+  const avatar =
+    normalizeAvatarUrl(user?.metadata?.avatar?.value) || apiAvatarUrl;
   const bot = user?.metadata?.bot?.value;
   const homepage = user?.metadata?.homepage?.value;
   const status = user?.metadata?.status?.value;
@@ -245,6 +246,39 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }
     return avatarUrl;
   };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setApiAvatarUrl("");
+      return;
+    }
+
+    if (user?.metadata?.avatar?.value) {
+      setApiAvatarUrl("");
+      return;
+    }
+
+    const account = whoisData?.account || username;
+    if (!account) {
+      return;
+    }
+
+    let cancelled = false;
+    fetchAvatarFromApi(account)
+      .then((resolvedAvatar) => {
+        if (cancelled) return;
+        setApiAvatarUrl(resolvedAvatar);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApiAvatarUrl("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, whoisData?.account, username, user?.metadata?.avatar?.value]);
 
   // Handle channel click to join
   const handleChannelClick = (channelName: string) => {

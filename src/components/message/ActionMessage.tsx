@@ -52,6 +52,7 @@ export const ActionMessage: React.FC<ActionMessageProps> = ({
         <MessageAvatar
           userId={message.userId}
           avatarUrl={messageUser?.metadata?.avatar?.value}
+          account={messageUser?.account || username}
           userStatus={messageUser?.metadata?.status?.value}
           isAway={messageUser?.isAway}
           theme="discord"

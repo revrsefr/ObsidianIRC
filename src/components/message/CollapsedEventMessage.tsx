@@ -1,11 +1,12 @@
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type EventGroup,
   getEventGroupSummary,
   getEventGroupTooltip,
 } from "../../lib/eventGrouping";
 import ircClient from "../../lib/ircClient";
+import { fetchAvatarFromApi, normalizeAvatarUrl } from "../../lib/ircUtils";
 import type { User } from "../../types";
 
 interface CollapsedEventMessageProps {
@@ -27,6 +28,7 @@ export const CollapsedEventMessage: React.FC<CollapsedEventMessageProps> = ({
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
+  const [apiAvatars, setApiAvatars] = useState<Record<string, string>>({});
   const serverId = eventGroup.messages[0]?.serverId || "";
   const channelId = eventGroup.messages[0]?.channelId || "";
   const ircCurrentUser = ircClient.getCurrentUser(serverId);
@@ -54,6 +56,39 @@ export const CollapsedEventMessage: React.FC<CollapsedEventMessageProps> = ({
   const tooltip = getEventGroupTooltip(eventGroup);
   const uniqueUsernames: string[] = Array.from(new Set(eventGroup.usernames));
 
+  useEffect(() => {
+    let cancelled = false;
+
+    uniqueUsernames.forEach((username) => {
+      const user = users.find((u) => u.username === username);
+      const metadataAvatar = normalizeAvatarUrl(user?.metadata?.avatar?.value);
+      if (metadataAvatar) {
+        return;
+      }
+
+      const account = user?.account || username;
+      fetchAvatarFromApi(account).then((resolvedAvatar) => {
+        if (cancelled || !resolvedAvatar) {
+          return;
+        }
+
+        setApiAvatars((prev) => {
+          if (prev[username] === resolvedAvatar) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [username]: resolvedAvatar,
+          };
+        });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uniqueUsernames, users]);
+
   return (
     <div
       className="group relative flex items-center px-4 py-1 hover:bg-discord-dark-500 transition-colors duration-75"
@@ -65,6 +100,10 @@ export const CollapsedEventMessage: React.FC<CollapsedEventMessageProps> = ({
         <div className="flex -space-x-1">
           {uniqueUsernames.slice(0, 3).map((username, index) => {
             const user = users.find((u) => u.username === username);
+            const metadataAvatar = normalizeAvatarUrl(
+              user?.metadata?.avatar?.value,
+            );
+            const effectiveAvatarUrl = metadataAvatar || apiAvatars[username];
             const handleAvatarClick = (e: React.MouseEvent) => {
               onUsernameContextMenu(
                 e,
@@ -82,10 +121,9 @@ export const CollapsedEventMessage: React.FC<CollapsedEventMessageProps> = ({
                 style={{ zIndex: 10 - index }}
                 onClick={handleAvatarClick}
               >
-                {user?.metadata?.avatar?.value &&
-                !failedAvatars.has(username) ? (
+                {effectiveAvatarUrl && !failedAvatars.has(username) ? (
                   <img
-                    src={user.metadata.avatar.value}
+                    src={effectiveAvatarUrl}
                     alt={username}
                     className="w-3 h-3 rounded-full object-cover hover:w-8 hover:h-8 transition-all duration-200"
                     onError={() => {

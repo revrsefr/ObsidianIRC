@@ -4,8 +4,10 @@ import { FaCheckCircle, FaChevronLeft } from "react-icons/fa";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import ircClient from "../../lib/ircClient";
 import {
+  fetchAvatarFromApi,
   getColorStyle,
   isUrlFromFilehost,
+  normalizeAvatarUrl,
   processMarkdownInText,
 } from "../../lib/ircUtils";
 import useStore from "../../store";
@@ -106,11 +108,10 @@ const UserItem: React.FC<{
   ) => void;
 }> = ({ user, serverId, channelId, currentUser, onContextMenu }) => {
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+  const [apiAvatarUrl, setApiAvatarUrl] = useState("");
 
   // Get global settings for media controls
-  const { showSafeMedia, showExternalContent } = useStore(
-    (state) => state.globalSettings,
-  );
+  const { showExternalContent } = useStore((state) => state.globalSettings);
 
   // Get server for filehost detection
   const server = useStore((state) =>
@@ -120,7 +121,10 @@ const UserItem: React.FC<{
   // Display metadata like website or status
   const website = user.metadata?.url?.value || user.metadata?.website?.value;
   const metadataStatus = user.metadata?.status?.value; // Metadata status message
-  const avatarUrl = user.metadata?.avatar?.value;
+  const avatarUrl = normalizeAvatarUrl(user.metadata?.avatar?.value);
+  const accountForAvatar =
+    user.account && user.account !== "0" ? user.account : user.username;
+  const effectiveAvatarUrl = avatarUrl || apiAvatarUrl;
   const color = user.metadata?.color?.value;
   const displayName = user.metadata?.["display-name"]?.value;
   const isBot = user.isBot || user.metadata?.bot?.value === "true";
@@ -138,17 +142,40 @@ const UserItem: React.FC<{
 
   // Determine if avatar should be shown based on media controls
   const isFilehostAvatar =
-    avatarUrl &&
-    server?.filehost &&
-    isUrlFromFilehost(avatarUrl, server.filehost);
+    effectiveAvatarUrl &&
+    isUrlFromFilehost(effectiveAvatarUrl, server?.filehost || "");
   const shouldShowAvatar =
-    avatarUrl &&
-    ((isFilehostAvatar && showSafeMedia) || showExternalContent) &&
+    effectiveAvatarUrl &&
+    (isFilehostAvatar || showExternalContent) &&
     !avatarLoadFailed;
   // Reset avatar load failed state when avatar URL changes
   useEffect(() => {
+    if (!effectiveAvatarUrl) {
+      return;
+    }
     setAvatarLoadFailed(false);
-  }, []);
+  }, [effectiveAvatarUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (avatarUrl) {
+      setApiAvatarUrl("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    fetchAvatarFromApi(accountForAvatar).then((url) => {
+      if (!cancelled) {
+        setApiAvatarUrl(url);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [avatarUrl, accountForAvatar]);
 
   return (
     <div
@@ -163,7 +190,7 @@ const UserItem: React.FC<{
         <div className="w-10 h-10 rounded-full bg-discord-dark-400 flex items-center justify-center text-white text-lg font-bold overflow-hidden">
           {shouldShowAvatar ? (
             <img
-              src={avatarUrl}
+              src={effectiveAvatarUrl}
               alt={user.username}
               className="w-full h-full object-cover"
               onError={() => {

@@ -129,15 +129,35 @@ export class WebSocketWrapper implements ISocket {
   public onerror: ((error: Error) => void) | null = null;
   public onclose: (() => void) | null = null;
 
+  private async normalizeMessageData(data: unknown): Promise<string> {
+    if (typeof data === "string") {
+      return data;
+    }
+    if (data instanceof ArrayBuffer) {
+      return new TextDecoder().decode(new Uint8Array(data));
+    }
+    if (typeof Blob !== "undefined" && data instanceof Blob) {
+      return await data.text();
+    }
+    return String(data ?? "");
+  }
+
   constructor(url: string) {
     this.socket = new WebSocket(url);
+    this.socket.binaryType = "arraybuffer";
 
     this.socket.onopen = () => {
       this.onopen?.();
     };
 
     this.socket.onmessage = (event) => {
-      this.onmessage?.({ data: event.data });
+      void this.normalizeMessageData(event.data)
+        .then((text) => {
+          this.onmessage?.({ data: text });
+        })
+        .catch(() => {
+          this.onmessage?.({ data: String(event.data ?? "") });
+        });
     };
 
     this.socket.onerror = (event) => {

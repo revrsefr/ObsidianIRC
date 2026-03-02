@@ -131,6 +131,7 @@ export const WhisperMessage: React.FC<WhisperMessageProps> = ({
           <MessageAvatar
             userId={message.userId}
             avatarUrl={avatarUrl}
+            account={messageUser?.account || username}
             userStatus={userStatus}
             isAway={messageUser?.isAway}
             theme={theme}
